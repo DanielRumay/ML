@@ -1,54 +1,37 @@
-# recommendation/logic.py
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
-import math
+def get_recommendations(title, top_n, data):
+    # Buscar la película base
+    base_movie = next((m for m in data if m.get("title", "").lower() == title.lower()), None)
 
-def cosine_similarity(v1, v2):
-    """
-    Calcula la similitud coseno entre dos vectores.
-    """
-    import math
-    dot_product = sum(a * b for a, b in zip(v1, v2))
-    magnitude_v1 = math.sqrt(sum(a * a for a in v1))
-    magnitude_v2 = math.sqrt(sum(b * b for b in v2))
-    if magnitude_v1 == 0 or magnitude_v2 == 0:
-        return 0
-    return dot_product / (magnitude_v1 * magnitude_v2)
+    if not base_movie or "genre_ids" not in base_movie:
+        return []
 
-def get_recommendations(title, num_recommendations, data):
-    """
-    Genera recomendaciones basadas en similitud coseno.
-    Args:
-        title (str): Título de la película base.
-        num_recommendations (int): Número de recomendaciones.
-        data (list): Lista de datos de películas.
-    Returns:
-        list: Lista de títulos recomendados (únicos).
-    """
-    base_movie = next((movie for movie in data if movie.get("title") == title), None)
-    if not base_movie:
-        return ["No se encontró la película base"]
+    # Filtrar películas del mismo género y con datos válidos
+    same_genre = [
+        m for m in data
+        if m.get("title") != base_movie["title"]
+        and "genre_ids" in m
+        and any(g in m["genre_ids"] for g in base_movie["genre_ids"])
+        and isinstance(m.get("vote_average"), (int, float))
+        and isinstance(m.get("popularity"), (int, float))
+    ]
 
-    try:
-        base_vector = [float(base_movie["popularity"]), float(base_movie["vote_average"])]
-    except (KeyError, TypeError, ValueError):
-        return ["La película base no tiene datos válidos para recomendación"]
+    # Ordenar por popularidad descendente
+    sorted_movies = sorted(same_genre, key=lambda x: -x["popularity"])
 
-    similarities = []
+    # Eliminar duplicados por título
     seen_titles = set()
+    unique_movies = []
+    for m in sorted_movies:
+        if m["title"] not in seen_titles:
+            seen_titles.add(m["title"])
+            unique_movies.append({
+                "title": m["title"],
+                "vote_average": m["vote_average"]
+            })
+        if len(unique_movies) == top_n:
+            break
 
-    for movie in data:
-        if movie.get("title") != title:
-            try:
-                other_vector = [float(movie["popularity"]), float(movie["vote_average"])]
-                similarity = cosine_similarity(base_vector, other_vector)
-                title_movie = movie["title"]
-
-                if title_movie not in seen_titles:
-                    similarities.append((title_movie, similarity))
-                    seen_titles.add(title_movie)
-
-            except (KeyError, TypeError, ValueError):
-                continue  # Ignorar si los datos no son válidos
-
-    similarities.sort(key=lambda x: x[1], reverse=True)
-    return [title for title, _ in similarities[:num_recommendations]]
+    return unique_movies
